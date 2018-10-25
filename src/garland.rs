@@ -1,43 +1,46 @@
-#![deny(warnings)]
-extern crate hyper;
-extern crate hyper_tls;
-extern crate pretty_env_logger;
+use failure::Error;
+use pretty_env_logger;
 
-use http;
-use hyper::rt::{self, Future, Stream};
-use hyper::Client;
-use hyper_tls::HttpsConnector;
+use reqwest;
+use serde_json::Value;
 use url::form_urlencoded;
-
-fn main() {
-    pretty_env_logger::init();
-
-    let garland_url = String::from("https://www.garlandtools.org/api/search.php?");
-    let encoded_url: String = form_urlencoded::Serializer::new(garland_url)
-        .append_pair("craftable", "1")
-        .append_pair("text", "rakshasa dogi of casting")
-        .append_pair("lang", "en")
-        .finish();
-    let uri: http::Uri = encoded_url.parse().unwrap();
-    rt::run(fetch_url(uri));
+#[macro_use(serde_derive)]
+#[derive(serde_derive::Serialize, serde_derive::Deserialize, Debug)]
+struct ItemSearchResult {
+    id: String,
 }
 
-fn fetch_url(url: hyper::Uri) -> impl Future<Item = (), Error = ()> {
-    let https = HttpsConnector::new(4).expect("TLS initialization failed");
-    let client = Client::builder().build::<_, hyper::Body>(https);
-    let mut buffer: Vec<u8> = Vec::new();
+// URL for individual item info is http://www.garlandtools.org/db/doc/item/en/3/23821.json
+fn query_item_id(item_name: &str) -> Result<Option<u64>, Error> {
+    let garland_search_url = String::from("https://www.garlandtools.org/api/search.php?");
+    let encoded_url: String = form_urlencoded::Serializer::new(garland_search_url)
+        .append_pair("craftable", "1")
+        .append_pair("type", "item")
+        .append_pair("text", item_name)
+        .append_pair("lang", "en")
+        .finish();
+    let body = reqwest::get(&encoded_url)?.text()?;
+    let items: Vec<ItemSearchResult> = serde_json::from_str(&body)?;
+    if items.len() > 1 {
+        println!("? more than 1?");
+    }
 
-    client
-        // Fetch the url...
-        .get(url)
-        // And then, if we get a response back...
-  
-        // If all good, just tell the user...
-        .map(|_| {
-            println!("\n\nDone.");
-        })
-        // If there was an error, let the user know...
-        .map_err(|err| {
-            eprintln!("Error {}", err);
-        })
+    let id: u64 = items[0].id.parse()?;
+    Ok(Some(id))
+}
+
+#[test]
+fn query_rakshasa_dogi_of_casting() {
+    const RAKSHASA_DOGI_OF_CASTING_ID: u64 = 23821;
+    let id = query_item_id(&"Rakshasa Dogi of Casting").unwrap().unwrap();
+    assert_eq!(id, RAKSHASA_DOGI_OF_CASTING_ID);
+}
+
+fn fetch_item_info(id: u64) -> Result<(), Error> {
+    let garland_item_url = String::from("http://www.garlandtools.org/db/doc/item/en/3/");
+    println!("id: {}", id);
+    let body2 = reqwest::get(&format!("{}{}.json", garland_item_url, id))?.text()?;
+    println!("body 2: {}", body2);
+
+    Ok(())
 }
