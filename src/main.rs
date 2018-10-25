@@ -7,7 +7,6 @@ mod ui;
 
 use crate::craft::craft_items;
 use crate::task::{Jobs, Task};
-use failure::Error;
 use std::path::PathBuf;
 use std::ptr::null_mut;
 use structopt::StructOpt;

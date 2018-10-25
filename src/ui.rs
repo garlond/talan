@@ -2,7 +2,6 @@ pub use self::ui_impl::{
     cancel, confirm, cursor_down, enter, escape, get_window, move_backward, open_craft_window,
     send_char, WinHandle,
 };
-use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
 
