@@ -57,9 +57,46 @@ struct JsonCraftIngredient {
     quality: Option<u64>,
 }
 
+#[derive(Debug)]
+pub struct Item {
+    name: String,
+    materials: Vec<Material>,
+}
 
-// URL for individual item info is http://www.garlandtools.org/db/doc/item/en/3/23821.json
-fn query_item_id(item_name: &str) -> Result<Option<u64>, Error> {
+#[derive(Debug)]
+pub struct Material {
+    name: String,
+    count: u64,
+}
+
+impl fmt::Display for Item {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}\n", self.name);
+        write!(f, "[\n");
+        for m in &self.materials {
+            write!(f, "  {}x {}\n", m.count, m.name);
+        }
+        write!(f, "]\n")
+    }
+}
+
+// Convert Garland's json layout to a structure easier to use
+// for Talan's purposes.
+impl From<JsonItem> for Item {
+    fn from(json_item: JsonItem) -> Self {
+        let mut v = Vec::new();
+        for i in 0..json_item.ingredients.len() {
+            v.push(Material {
+                name: json_item.ingredients[i].name.clone(),
+                count: json_item.item.craft[0].ingredients[i].amount,
+            })
+        }
+        Item { name: json_item.item.name,  materials: v }
+    }
+}
+
+// Return the item id for the provided item name
+pub fn query_item_id(item_name: &str) -> Result<Option<u64>, Error> {
     let garland_search_url = String::from("https://www.garlandtools.org/api/search.php?");
     let encoded_url: String = form_urlencoded::Serializer::new(garland_search_url)
         .append_pair("craftable", "1")
@@ -74,6 +111,16 @@ fn query_item_id(item_name: &str) -> Result<Option<u64>, Error> {
     Ok(Some(id))
 }
 
+// Get the materials and other information for a given item
+pub fn fetch_item_info(name: &str) -> Result<Item, Error> {
+    let id = query_item_id(&name)?.unwrap();
+    let garland_item_url = String::from("http://www.garlandtools.org/db/doc/item/en/3/");
+    let body = reqwest::get(&format!("{}{}.json", garland_item_url, id))?.text()?;
+    let item: JsonItem = serde_json::from_str(&body)?;
+
+    Ok(Item::from(item))
+}
+
 #[test]
 fn query_rakshasa_dogi_of_casting() {
     const RAKSHASA_DOGI_OF_CASTING_ID: u64 = 23821;
@@ -84,14 +131,16 @@ fn query_rakshasa_dogi_of_casting() {
 #[test] 
 fn query_crimson_cider_recipe() {
     const CRIMSON_CIDER_ID: u64 = 22436;
-    let data = fetch_item_info(CRIMSON_CIDER_ID).unwrap();
-    println!("{}", data);
-}
-
-fn fetch_item_info(id: u64) -> Result<JsonItem, Error> {
-    let garland_item_url = String::from("http://www.garlandtools.org/db/doc/item/en/3/");
-    let body = reqwest::get(&format!("{}{}.json", garland_item_url, id))?.text()?;
-    let item: JsonItem = serde_json::from_str(&body)?;
-
-    Ok(item)
+    let item = fetch_item_info("Crimson Cider").unwrap();
+    assert_eq!(item.name, "Crimson Cider");
+    assert_eq!(item.materials[0].name, "Crimson Pepper");
+    assert_eq!(item.materials[0].count, 1);
+    assert_eq!(item.materials[1].name, "Jhammel Ginger");
+    assert_eq!(item.materials[1].count, 1);
+    assert_eq!(item.materials[2].name, "Cumin Seeds");
+    assert_eq!(item.materials[2].count, 1);
+    assert_eq!(item.materials[3].name, "Kudzu Root");
+    assert_eq!(item.materials[3].count, 1);
+    assert_eq!(item.materials[4].name, "Loquat");
+    assert_eq!(item.materials[4].count, 3);
 }
