@@ -1,0 +1,18 @@
+Have NQ / Have HQ = NQ will be selected
+Have no NQ, Have HQ = nothing will be select
+Have some NQ, Have HQ = Some NQ will be selected
+
+Craft after search:
+confirm to get pointer
+confirm to select recipe
+confirm to synthesize
+
+Craft after craft:
+confirm to get pointer
+confirm to select recipe
+confirm to synthesize
+
+Craft after collectable
+// Possibly because hitting OK with the keybind activates the cursor for the next screen?
+confirm to select recipe
+confirm to synthesize
