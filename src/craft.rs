@@ -71,8 +71,23 @@ fn select_recipe(window: ui::WinHandle, task: &Task) {
         ui::cursor_down(window);
     }
 
-    // Select the recipe to get to components / craft
+    // Select the recipe to get to components / sythen
     ui::confirm(window);
+}
+
+fn select_materials(window: ui::WinHandle, task: &Task) {
+    ui::cursor_up(window);
+    // TODO implement HQ > NQ
+    ui::cursor_right(window);
+    ui::cursor_right(window);
+
+    // The cursor should be on the quantity field of the bottom item now
+    for material in &task.item.materials {
+        for _ in 0..material.count {
+            ui::confirm(window)
+        }
+        ui::cursor_up(window);
+    }
 }
 
 fn execute_task(window: ui::WinHandle, task: &Task) {
@@ -81,10 +96,18 @@ fn execute_task(window: ui::WinHandle, task: &Task) {
         // Hit the Synthesize button and wait for the window to pop up. We spam
         // it a bit here because the timing can vary a bit depending on framerate
         // and background status after finishing a craft.
-        for _ in 0..4 {
+        if !task.collectable {
+            ui::confirm(window);
+        }
+        // If we're at the start of a task we will already have the Synthesize button
+        // selected with the pointer.
+        if task_index > 1 {
             ui::confirm(window);
         }
 
+        select_materials(window, &task);
+        return;
+        ui::confirm(window);
         // Wait for the craft dialog to pop up
         ui::wait_secs(2);
         // and now execute the actions
