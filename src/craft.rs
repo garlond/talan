@@ -87,13 +87,14 @@ fn select_materials(window: ui::WinHandle, task: &Task) {
     ui::cursor_right(window);
 
     // The cursor should be on the quantity field of the bottom item now
-    for material in &task.item.materials {
-        for _ in 0..material.count {
+    for (i, material) in task.item.materials.iter().enumerate() {
+        for i in 0..material.count {
             ui::confirm(window)
         }
-        ui::cursor_up(window);
+        if i < task.item.materials.len() - 1 {
+            ui::cursor_up(window);
+        }
     }
-    ui::cursor_down(window);
     ui::cursor_left(window);
     for material in &task.item.materials {
         for _ in 0..material.count {
@@ -109,9 +110,7 @@ fn execute_task(window: ui::WinHandle, task: &Task) {
         // Hit the Synthesize button and wait for the window to pop up. We spam
         // it a bit here because the timing can vary a bit depending on framerate
         // and background status after finishing a craft.
-        //if !task.collectable {
-        //   ui::confirm(window);
-        //}
+
         // If we're at the start of a task we will already have the Synthesize button
         // selected with the pointer.
         if task_index > 1 && !task.collectable {
@@ -130,13 +129,8 @@ fn execute_task(window: ui::WinHandle, task: &Task) {
         }
 
         // Wait to get back to the crafting window
-        if task.collectable {
-            ui::wait_secs(1);
-            ui::confirm(window);
-            ui::wait_secs(4);
-        } else {
-            ui::wait_secs(4);
-        };
+        ui::wait_secs(4);
+        ui::confirm(window);
     }
 }
 

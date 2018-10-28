@@ -130,7 +130,7 @@ pub fn query_item_id(item_name: &str) -> Result<Option<u64>, Error> {
         .append_pair("type", "item")
         .append_pair("text", item_name)
         .append_pair("lang", "en")
-        .append_pair("exact", "1")
+        //.append_pair("exact", "1")
         .finish();
     log::trace!("fetch({})", encoded_url);
     let body = reqwest::get(&encoded_url)?.text()?;
