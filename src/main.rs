@@ -1,9 +1,9 @@
 mod craft;
-mod cross;
 mod garland;
 mod macros;
 mod task;
 mod ui;
+mod role_actions;
 
 use pretty_env_logger;
 #[macro_use]

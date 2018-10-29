@@ -3,10 +3,12 @@ use crate::task::Task;
 use crate::ui;
 use log;
 use std::io::{stdout, Write};
+use crate::role_actions::RoleActions;
 
 // Runs through the set of tasks
 // TODO: make it actually run more than one task
 pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
+    let mut role_actions = RoleActions::new(window);
     for task in tasks {
         // Change to the appropriate job if one is set. XIV
         // gearsets start at 1, so 0 is a safe empty value.
@@ -19,6 +21,12 @@ pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
             toggle_collectable(window);
         }
 
+        for action in &task.actions {
+            if role_actions.is_role_action(&action.name) {
+                role_actions.add_action(&action.name);
+            }
+        }
+
         // Bring up the crafting window itself and give it time to appear
         ui::open_craft_window(window);
         ui::wait_secs(1);
@@ -29,10 +37,11 @@ pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
         execute_task(window, &task);
 
         // Close out of the cvrafting window and stand up
+        ui::escape(window);
+        ui::wait_secs(1);
         ui::cancel(window);
         ui::cancel(window);
-        ui::cancel(window);
-        ui::cancel(window);
+        ui::wait_secs(1);
         if task.collectable {
             toggle_collectable(window);
         }
@@ -52,6 +61,8 @@ fn clear_windows(window: ui::WinHandle) {
     ui::wait_secs(1);
 }
 
+// Selects the appropriate recipe then leaves the cursor on the Synthesize
+// button, ready for material selection.
 fn select_recipe(window: ui::WinHandle, task: &Task) {
     log::info!("selecting recipe...");
     // Loop backward through the UI 9 times to ensure we hit the text box
@@ -107,30 +118,34 @@ fn select_materials(window: ui::WinHandle, task: &Task) {
 fn execute_task(window: ui::WinHandle, task: &Task) {
     for task_index in 1..=task.count {
         println!("crafting {} {}/{}", task.item.name, task_index, task.count);
-        // Hit the Synthesize button and wait for the window to pop up. We spam
-        // it a bit here because the timing can vary a bit depending on framerate
-        // and background status after finishing a craft.
-
         // If we're at the start of a task we will already have the Synthesize button
         // selected with the pointer.
-        if task_index > 1 && !task.collectable {
-            ui::confirm(window);
-        }
         select_materials(window, &task);
         ui::confirm(window);
         // Wait for the craft dialog to pop up
         ui::wait_secs(2);
         // and now execute the actions
         execute_actions(window, &task.actions);
-        // If the item is collectable we'll have an additional dialog
+        
+        // There are two paths here. If an item is collectable then it will
+        // prompt a dialog to collect the item as collectable. In this case,
+        // selecting confirm with the keyboard will bring the cursor up already.
+        // The end result is that it needs fewer presses of the confirm key
+        // than otherwise.
+        //
+        // At the end of this sequence the cursor should have selected the recipe
+        // again and be on the Synthesize button.
         if task.collectable {
             ui::wait_secs(1);
             ui::confirm(window);
+            // Give the UI a moment
+            ui::wait_secs(3);
+            ui::confirm(window)
+        } else {
+            ui::wait_secs(3);
+            ui::confirm(window);
+            ui::confirm(window);
         }
-
-        // Wait to get back to the crafting window
-        ui::wait_secs(4);
-        ui::confirm(window);
     }
 }
 
@@ -152,7 +167,7 @@ fn execute_actions(window: ui::WinHandle, actions: &Vec<macros::Action>) {
 }
 
 fn send_string(window: ui::WinHandle, s: &str) {
-    log::debug!("string(`{}`)", s);
+    log::trace!("string(`{}`)", s);
     for c in s.chars() {
         ui::send_char(window, c);
     }
@@ -178,3 +193,28 @@ fn change_gearset(window: ui::WinHandle, gearset: u64) {
 fn toggle_collectable(window: ui::WinHandle) {
     send_action(window, &"collectable synthesis");
 }
+
+pub fn aaction(window: ui::WinHandle, verb: &str, action: &str) {
+    ui::enter(window);
+    if verb == "clear" {
+        send_string(window, "/aaction clear");
+    } else {
+        send_string(window, &format!("/aaction {} \"{}\"", verb, action));
+    }
+    ui::enter(window);
+    ui::wait_secs(1);
+}
+
+pub fn aaction_clear(window: ui::WinHandle, action: &str) {
+    aaction(window, "clear", "")
+}
+
+pub fn aaction_add(window: ui::WinHandle, action: &str) {
+    aaction(window, "add", action)
+}
+
+pub fn aaction_remove(window: ui::WinHandle, action: &str) {
+    aaction(window, "remove", action)
+}
+
+
