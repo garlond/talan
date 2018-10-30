@@ -8,12 +8,25 @@ use crate::role_actions::RoleActions;
 // Runs through the set of tasks
 // TODO: make it actually run more than one task
 pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
+    // TODO: this will be a problem when we run multiple tasks
+    // TODO: Investigate why there's always a longer delay after Careful Synthesis II
+    // TODO: Tea is going to be a problem for non-specialty recipes
     let mut role_actions = RoleActions::new(window);
+    // Clear role actions before we iterate tasks so the game state
+    // and role action state will be in sync.
+    aaction_clear(window);
+    let mut gearset: u64 = 0;
     for task in tasks {
         // Change to the appropriate job if one is set. XIV
         // gearsets start at 1, so 0 is a safe empty value.
-        if task.gearset > 0 {
+        if task.gearset > 0 && task.gearset != gearset {
+            // If we're changing jobs we need to set role actions up again,
+            // otherwise there's a good chance we can reuse some of the role
+            // actions we already have for the next craft
+            aaction_clear(window);
+            wait_ms(200);
             change_gearset(window, task.gearset);
+            gearset = task.gearset;
         }
 
         clear_windows(window);
@@ -21,11 +34,8 @@ pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
             toggle_collectable(window);
         }
 
-        for action in &task.actions {
-            if role_actions.is_role_action(&action.name) {
-                role_actions.add_action(&action.name);
-            }
-        }
+        // Check the role action cache and configure any we need for this task
+        configure_role_actions(&mut role_actions, task);
 
         // Bring up the crafting window itself and give it time to appear
         ui::open_craft_window(window);
@@ -37,11 +47,8 @@ pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
         execute_task(window, &task);
 
         // Close out of the cvrafting window and stand up
-        ui::escape(window);
-        ui::wait_secs(1);
-        ui::cancel(window);
-        ui::cancel(window);
-        ui::wait_secs(1);
+        clear_windows(window);
+        ui::wait_secs(2);
         if task.collectable {
             toggle_collectable(window);
         }
@@ -51,7 +58,7 @@ pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
 fn clear_windows(window: ui::WinHandle) {
     println!("clearing window...");
     // Hitting escape closes one window each. 10 is excessive, but conservative
-    for _ in 0..10 {
+    for _ in 0..2 {
         ui::escape(window);
     }
 
@@ -59,6 +66,17 @@ fn clear_windows(window: ui::WinHandle) {
     ui::cancel(window);
     ui::cancel(window);
     ui::wait_secs(1);
+    ui::enter(window);
+    ui::enter(window);
+}
+
+fn configure_role_actions(role_actions: &mut RoleActions, task: &Task) {
+    for action in &task.actions {
+        if role_actions.is_role_action(&action.name) {
+            role_actions.add_action(&action.name);
+            ui::wait_ms(250); // In testing, the game takes 1 second per role action
+        }
+    }
 }
 
 // Selects the appropriate recipe then leaves the cursor on the Synthesize
@@ -69,6 +87,8 @@ fn select_recipe(window: ui::WinHandle, task: &Task) {
     // no matter what crafting class we are. The text input boxes are strangely
     // modal so that if we select them at any point they will hold on to focus
     // for characters.
+    //
+    // TODO: Link recipe job to this so we don't move more than we need
     for _ in 0..9 {
         ui::move_backward(window);
     }
@@ -98,11 +118,14 @@ fn select_materials(window: ui::WinHandle, task: &Task) {
     ui::cursor_right(window);
 
     // The cursor should be on the quantity field of the bottom item now
-    for (i, material) in task.item.materials.iter().enumerate() {
-        for i in 0..material.count {
+    // We move through the ingredients backwards because we start at the bottom of t
+    for (i, material) in task.item.materials.iter().enumerate().rev() {
+        log::trace!("{}x {}", material.count, material.name);
+        for _ in 0..material.count {
             ui::confirm(window)
         }
-        if i < task.item.materials.len() - 1 {
+        // Don't move up if we've made it back to the top of the ingredients
+        if i != 0 {
             ui::cursor_up(window);
         }
     }
@@ -142,8 +165,7 @@ fn execute_task(window: ui::WinHandle, task: &Task) {
             ui::wait_secs(3);
             ui::confirm(window)
         } else {
-            ui::wait_secs(3);
-            ui::confirm(window);
+            ui::wait_secs(4);
             ui::confirm(window);
         }
     }
@@ -199,22 +221,20 @@ pub fn aaction(window: ui::WinHandle, verb: &str, action: &str) {
     if verb == "clear" {
         send_string(window, "/aaction clear");
     } else {
-        send_string(window, &format!("/aaction {} \"{}\"", verb, action));
+        send_string(window, &format!("/aaction \"{}\" {}", action, verb));
     }
     ui::enter(window);
-    ui::wait_secs(1);
+    //ui::wait_secs(1);
 }
 
-pub fn aaction_clear(window: ui::WinHandle, action: &str) {
+pub fn aaction_clear(window: ui::WinHandle) {
     aaction(window, "clear", "")
 }
 
 pub fn aaction_add(window: ui::WinHandle, action: &str) {
-    aaction(window, "add", action)
+    aaction(window, "on", action)
 }
 
 pub fn aaction_remove(window: ui::WinHandle, action: &str) {
-    aaction(window, "remove", action)
+    aaction(window, "off", action)
 }
-
-

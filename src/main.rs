@@ -51,7 +51,7 @@ struct Opt {
 }
 
 fn main() -> Result<(), Error> {
-    pretty_env_logger::init();
+    pretty_env_logger::init_timed();
 
     let opt = Opt::from_args();
     let mut window: ui::WinHandle = null_mut();
