@@ -1,8 +1,7 @@
-#[macro_use(lazy_static)]
 use std::collections::HashSet;
-use linked_hash_set::LinkedHashSet;
-use crate::craft::{aaction_remove, aaction_add};
+use crate::craft::{aaction_add, aaction_remove};
 use crate::ui::WinHandle;
+use linked_hash_set::LinkedHashSet;
 use log;
 
 lazy_static::lazy_static! {
@@ -56,7 +55,10 @@ pub struct RoleActions {
 // actions not referenced in the current macro.
 impl RoleActions {
     pub fn new(window: WinHandle) -> RoleActions {
-        RoleActions { window: window, current_actions: LinkedHashSet::new() }
+        RoleActions {
+            window: window,
+            current_actions: LinkedHashSet::new(),
+        }
     }
 
     pub fn is_role_action(&self, action: &str) -> bool {
@@ -81,7 +83,7 @@ impl RoleActions {
         // If insert returns false then the action was already in the set and no action
         // needs to be taken. It has the side effect of moving it to the back.
         if !self.current_actions.insert(action.to_string()) {
-            return
+            return;
         }
 
         // If we now have more than 10 actions we need to remove the front element so there
@@ -96,28 +98,28 @@ impl RoleActions {
     }
 }
 
-    use std::ptr::null_mut;
+use std::ptr::null_mut;
 
-    #[test]
-    fn test_role_actions() {
-        let window: WinHandle = null_mut();
-        let mut ra = RoleActions::new(window);
-        ra.add_action("Tricks of the Trade");
-        ra.add_action("Byregot's Blessing");
-        ra.add_action("Tricks of the Trade");
-        assert_eq!(2, ra.count());
-        ra.add_action("ingenuity ii");
-        ra.add_action("ingenuity");
-        ra.add_action("innovation");
-        ra.add_action("maker's mark");
-        ra.add_action("manipulation");
-        ra.add_action("muscle memory");
-        ra.add_action("name of earth");
-        ra.add_action("name of fire");
-        ra.add_action("name of ice");
-        ra.add_action("name of lightning");
-        assert_eq!(10, ra.count());
-        assert_eq!(false, ra.contains("Tricks of the Trade"));
-        assert_eq!(false, ra.contains("Byregot's Blessing"));
-        println!("{:?}", ra);
-    }
+#[test]
+fn test_role_actions() {
+    let window: WinHandle = null_mut();
+    let mut ra = RoleActions::new(window);
+    ra.add_action("Tricks of the Trade");
+    ra.add_action("Byregot's Blessing");
+    ra.add_action("Tricks of the Trade");
+    assert_eq!(2, ra.count());
+    ra.add_action("ingenuity ii");
+    ra.add_action("ingenuity");
+    ra.add_action("innovation");
+    ra.add_action("maker's mark");
+    ra.add_action("manipulation");
+    ra.add_action("muscle memory");
+    ra.add_action("name of earth");
+    ra.add_action("name of fire");
+    ra.add_action("name of ice");
+    ra.add_action("name of lightning");
+    assert_eq!(10, ra.count());
+    assert_eq!(false, ra.contains("Tricks of the Trade"));
+    assert_eq!(false, ra.contains("Byregot's Blessing"));
+    println!("{:?}", ra);
+}

@@ -1,20 +1,18 @@
 mod craft;
 mod garland;
 mod macros;
+mod role_actions;
 mod task;
 mod ui;
-mod role_actions;
 
-use pretty_env_logger;
-#[macro_use]
-use log;
 use crate::craft::craft_items;
 use crate::task::Task;
+use failure::Error;
+use log;
+use pretty_env_logger;
 use std::path::PathBuf;
 use std::ptr::null_mut;
 use structopt::StructOpt;
-#[macro_use(failure)]
-use failure::{Error};
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "Talan")]

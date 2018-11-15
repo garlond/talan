@@ -1,9 +1,9 @@
 use crate::macros;
+use crate::role_actions::RoleActions;
 use crate::task::Task;
 use crate::ui;
 use log;
 use std::io::{stdout, Write};
-use crate::role_actions::RoleActions;
 
 // Runs through the set of tasks
 // TODO: make it actually run more than one task
@@ -24,7 +24,7 @@ pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
             // otherwise there's a good chance we can reuse some of the role
             // actions we already have for the next craft
             aaction_clear(window);
-            wait_ms(200);
+            ui::wait_ms(200);
             change_gearset(window, task.gearset);
             gearset = task.gearset;
         }
@@ -149,7 +149,7 @@ fn execute_task(window: ui::WinHandle, task: &Task) {
         ui::wait_secs(2);
         // and now execute the actions
         execute_actions(window, &task.actions);
-        
+
         // There are two paths here. If an item is collectable then it will
         // prompt a dialog to collect the item as collectable. In this case,
         // selecting confirm with the keyboard will bring the cursor up already.
