@@ -2,11 +2,84 @@ use crate::macros;
 use crate::role_actions::RoleActions;
 use crate::task::Task;
 use crate::ui;
+
+use failure::Error;
 use log;
+use std::sync::mpsc;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum State {
+    Queued,
+    Initializing,
+    Setup,
+    Crafting(String),
+    Done,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Status {
+    pub state: State,
+    pub task: u64,
+    pub craft: u64,
+    pub step: u64,
+}
+
+struct StatusSender {
+    chan: mpsc::Sender<Status>,
+    status: Status,
+}
+
+impl StatusSender {
+    pub fn new(chan: mpsc::Sender<Status>) -> StatusSender {
+        StatusSender {
+            chan: chan,
+            status: Status {
+                state: State::Queued,
+                task: 0,
+                craft: 0,
+                step: 0,
+            },
+        }
+    }
+
+    fn send_status(&self) -> Result<(), Error> {
+        self.chan
+            .send(self.status.clone())
+            .map_err(|e| format_err!("error sending status: {}", e))
+    }
+
+    pub fn set_state(&mut self, state: State) -> Result<(), Error> {
+        self.status.state = state;
+        self.send_status()
+    }
+
+    pub fn set_task(&mut self, task: u64) -> Result<(), Error> {
+        self.status.task = task;
+        self.status.craft = 0;
+        self.status.step = 0;
+        self.send_status()
+    }
+
+    pub fn set_craft(&mut self, craft: u64) -> Result<(), Error> {
+        self.status.craft = craft;
+        self.status.step = 0;
+        self.send_status()
+    }
+
+    pub fn set_step(&mut self, step: u64) -> Result<(), Error> {
+        self.status.step = step;
+        self.send_status()
+    }
+}
 
 // Runs through the set of tasks
 // TODO: make it actually run more than one task
-pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
+pub fn craft_items(
+    window: ui::WinHandle,
+    tasks: &Vec<Task>,
+    status_chan: mpsc::Sender<Status>,
+) -> Result<(), Error> {
+    let mut sender = StatusSender::new(status_chan);
     // TODO: this will be a problem when we run multiple tasks
     // TODO: Investigate why there's always a longer delay after Careful Synthesis II
     // TODO: Tea is going to be a problem for non-specialty recipes
@@ -15,7 +88,9 @@ pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
     // and role action state will be in sync.
     aaction_clear(window);
     let mut gearset: u64 = 0;
-    for task in tasks {
+    for (task_index, task) in tasks.iter().enumerate() {
+        sender.set_task(task_index as u64)?;
+        sender.set_state(State::Initializing)?;
         // Change to the appropriate job if one is set. XIV
         // gearsets start at 1, so 0 is a safe empty value.
         if task.gearset > 0 && task.gearset != gearset {
@@ -43,7 +118,7 @@ pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
         // Navigate to the correct recipe based on the index provided
         select_recipe(window, &task);
         // Time to craft the items
-        execute_task(window, &task);
+        execute_task(window, &mut sender, &task)?;
 
         // Close out of the crafting window and stand up
         clear_windows(window);
@@ -51,11 +126,12 @@ pub fn craft_items(window: ui::WinHandle, tasks: &[Task]) {
         if task.collectable {
             toggle_collectable(window);
         }
+        sender.set_state(State::Done)?;
     }
+    Ok(())
 }
 
 fn clear_windows(window: ui::WinHandle) {
-    println!("clearing window...");
     // Hitting escape closes one window each. 10 is excessive, but conservative
     for _ in 0..2 {
         ui::escape(window);
@@ -137,9 +213,14 @@ fn select_materials(window: ui::WinHandle, task: &Task) {
     }
 }
 
-fn execute_task(window: ui::WinHandle, task: &Task) {
+fn execute_task(
+    window: ui::WinHandle,
+    sender: &mut StatusSender,
+    task: &Task,
+) -> Result<(), Error> {
     for task_index in 1..=task.count {
-        println!("crafting {} {}/{}", task.item.name, task_index, task.count);
+        sender.set_craft(task_index)?;
+        sender.set_state(State::Setup)?;
         // If we're at the start of a task we will already have the Synthesize button
         // selected with the pointer.
         select_materials(window, &task);
@@ -147,7 +228,7 @@ fn execute_task(window: ui::WinHandle, task: &Task) {
         // Wait for the craft dialog to pop up
         ui::wait_secs(2);
         // and now execute the actions
-        execute_actions(window, &task.actions);
+        execute_actions(window, sender, &task.actions)?;
 
         // There are two paths here. If an item is collectable then it will
         // prompt a dialog to collect the item as collectable. In this case,
@@ -168,16 +249,24 @@ fn execute_task(window: ui::WinHandle, task: &Task) {
             ui::confirm(window);
         }
     }
+
+    Ok(())
 }
 
-fn execute_actions(window: ui::WinHandle, actions: &[macros::Action]) {
-    for action in actions {
+fn execute_actions(
+    window: ui::WinHandle,
+    sender: &mut StatusSender,
+    actions: &[macros::Action],
+) -> Result<(), Error> {
+    for (action_index, action) in actions.iter().enumerate() {
         // Each character has a 20ms wait and the shortest action string
         // we can make (observe or reclaim) is 240 ms, along with 50ms
         // from send_action. That reduces how much time is needed to wait
         // here for the GCD to finish. Although macros always wait in 2 or
         // 3 second periods, the actual wait period is 2.0 and 2.5 seconds,
         // so that's adjusted here.
+        sender.set_state(State::Crafting(action.name.clone()))?;
+        sender.set_step(action_index as u64)?;
         send_action(window, &action.name);
         if action.wait == 2 {
             ui::wait_ms(1700);
@@ -185,6 +274,9 @@ fn execute_actions(window: ui::WinHandle, actions: &[macros::Action]) {
             ui::wait_ms(2200);
         };
     }
+    sender.set_step(actions.len() as u64)?;
+    sender.set_state(State::Crafting(String::from("Finishing")))?;
+    Ok(())
 }
 
 fn send_string(window: ui::WinHandle, s: &str) {
@@ -236,4 +328,59 @@ pub fn aaction_add(window: ui::WinHandle, action: &str) {
 
 pub fn aaction_remove(window: ui::WinHandle, action: &str) {
     aaction(window, "off", action)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_sender_test() {
+        let (tx, rx) = mpsc::channel();
+        let mut sender = StatusSender::new(tx);
+
+        sender.set_step(2).unwrap();
+        assert_eq!(
+            rx.recv().unwrap(),
+            Status {
+                state: State::Queued,
+                task: 0,
+                craft: 0,
+                step: 2,
+            }
+        );
+
+        sender.set_craft(3).unwrap();
+        assert_eq!(
+            rx.recv().unwrap(),
+            Status {
+                state: State::Queued,
+                task: 0,
+                craft: 3,
+                step: 0,
+            }
+        );
+
+        sender.set_task(4).unwrap();
+        assert_eq!(
+            rx.recv().unwrap(),
+            Status {
+                state: State::Queued,
+                task: 4,
+                craft: 0,
+                step: 0,
+            }
+        );
+
+        sender.set_state(State::Done).unwrap();
+        assert_eq!(
+            rx.recv().unwrap(),
+            Status {
+                state: State::Done,
+                task: 4,
+                craft: 0,
+                step: 0,
+            }
+        );
+    }
 }
