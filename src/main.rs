@@ -1,17 +1,10 @@
-mod craft;
-mod garland;
-mod macros;
-mod role_actions;
-mod task;
-mod ui;
+extern crate talan;
 
-use crate::craft::craft_items;
-use crate::task::Task;
+use talan::task::Task;
 use failure::Error;
 use log;
 use pretty_env_logger;
 use std::path::PathBuf;
-use std::ptr::null_mut;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
@@ -52,20 +45,15 @@ fn main() -> Result<(), Error> {
     pretty_env_logger::init_timed();
 
     let opt = Opt::from_args();
-    let mut window: ui::WinHandle = null_mut();
-    // Can this became map err?
-    if !ui::get_window(&mut window) {
-        return Err(failure::format_err!(
-            "Could not find FFXIV window. Is the client running?"
-        ));
-    }
+
+    let mut talan = talan::Talan::new()?;
 
     // Grab and parse the config file. Errors are all especially fatal so
     // let them bubble up if they occur.
     let macro_contents =
-        macros::parse_file(opt.macro_file).map_err(|e| format!("error parsing macro: `{}`", e));
+        talan::macros::parse_file(opt.macro_file).map_err(|e| format!("error parsing macro: `{}`", e));
 
-    let item = garland::fetch_item_info(&opt.item_name)?;
+    let item = talan::garland::fetch_item_info(&opt.item_name)?;
     log::info!("item information: {}", item);
     let tasks = vec![Task {
         item: item,
@@ -75,6 +63,7 @@ fn main() -> Result<(), Error> {
         gearset: opt.gearset,
         collectable: opt.collectable,
     }];
-    craft_items(window, &tasks);
+
+    talan.craft(&tasks);
     Ok(())
 }
