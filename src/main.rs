@@ -1,9 +1,12 @@
+extern crate indicatif;
 extern crate talan;
 
 use failure::Error;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log;
 use pretty_env_logger;
 use std::path::PathBuf;
+use std::thread;
 use structopt::StructOpt;
 use talan::task::Task;
 
@@ -41,6 +44,75 @@ struct Opt {
     dryrun: bool,
 }
 
+struct ProgressDisplay {
+    thread_handle: thread::JoinHandle<()>,
+    craft_bar: ProgressBar,
+    step_bar: ProgressBar,
+}
+
+impl ProgressDisplay {
+    fn new(num_crafts: u64, num_steps: u64, item_name: &str) -> ProgressDisplay {
+        let bar_style = ProgressStyle::default_bar()
+            .template("{pos:>2}/{len:2} {spinner} {bar:40.cyan/blue} {msg}");
+        let m = MultiProgress::new();
+        let craft_bar = m.add(ProgressBar::new(num_crafts));
+        craft_bar.set_style(bar_style.clone());
+        let step_bar = m.add(ProgressBar::new(num_steps as u64));
+        step_bar.set_style(bar_style.clone());
+
+        let t = thread::spawn(move || {
+            m.join_and_clear().unwrap();
+        });
+
+        craft_bar.set_position(0);
+        craft_bar.set_message(item_name);
+        step_bar.set_position(0);
+        step_bar.enable_steady_tick(100);
+
+        ProgressDisplay {
+            thread_handle: t,
+            craft_bar: craft_bar,
+            step_bar: step_bar,
+        }
+    }
+
+    /// Handles a status update and updates the progress bars
+    ///
+    /// Returns true if the task is done.
+    fn update(&self, status: &talan::craft::Status) -> bool {
+        match &status.state {
+            talan::craft::State::Queued => false,
+            talan::craft::State::Initializing => {
+                self.step_bar.set_message("Initializing");
+                false
+            }
+            talan::craft::State::Setup => {
+                self.craft_bar.set_position(status.craft);
+                self.step_bar.set_message("Setting up");
+                false
+            }
+            talan::craft::State::Crafting(a) => {
+                self.step_bar.set_position(status.step);
+                if status.step == 0 {
+                    self.step_bar.set_draw_delta(status.step);
+                }
+                self.step_bar.set_message(&a);
+                false
+            }
+            talan::craft::State::Done => true,
+        }
+    }
+
+    /// Clean up the progress bar display.
+    ///
+    /// Consumes self.  Blocks until all helper threads are terminated.
+    fn join(self) {
+        self.step_bar.finish_and_clear();
+        self.craft_bar.finish_and_clear();
+        self.thread_handle.join().unwrap();
+    }
+}
+
 fn main() -> Result<(), Error> {
     pretty_env_logger::init_timed();
 
@@ -67,24 +139,18 @@ fn main() -> Result<(), Error> {
     }];
 
     talan.craft(tasks);
+    let prog = ProgressDisplay::new(opt.count, actions_len as u64, &opt.item_name);
     loop {
-        match talan.get_status() {
-            Ok(status) => match status.state {
-                talan::craft::State::Queued => (),
-                talan::craft::State::Initializing => println!("Initializing"),
-                talan::craft::State::Setup => {
-                    println!("Setting Up Craft {}/{}", status.craft, opt.count)
-                }
-                talan::craft::State::Crafting(a) => {
-                    println!("  Step {}/{} {}", status.step, actions_len, a)
-                }
-                talan::craft::State::Done => {
-                    println!("Done");
-                    break;
-                }
-            },
-            Err(_) => break,
+        let status = talan.get_status()?;
+        if prog.update(&status) {
+            break;
         }
     }
-    talan.join()
+
+    talan.join()?;
+    prog.join();
+
+    println!("Done.");
+
+    Ok(())
 }
