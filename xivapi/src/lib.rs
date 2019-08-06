@@ -3,6 +3,8 @@ use log;
 use reqwest;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::cmp::Ordering;
+use std::collections::HashMap;
 
 const XIVAPI_SEARCH_URL: &str = "https://xivapi.com/search";
 
@@ -105,6 +107,12 @@ struct RecipeLevelTable {
 
 #[allow(non_snake_case)]
 #[derive(Clone, Debug, Deserialize)]
+pub struct GameContentLinks {
+    RecipeNotebookList: HashMap<String, Vec<u32>>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ApiRecipe {
     ID: u32,
     Name: String,
@@ -125,6 +133,51 @@ pub struct ApiRecipe {
     ItemIngredient3: Option<ItemIngredient>,
     ItemIngredient4: Option<ItemIngredient>,
     ItemIngredient5: Option<ItemIngredient>,
+    GameContentLinks: Option<GameContentLinks>,
+}
+
+impl PartialEq for ApiRecipe {
+    fn eq(&self, other: &Self) -> bool {
+        self.ID == other.ID
+    }
+}
+
+impl Eq for ApiRecipe {}
+
+// Ord is implemented
+impl Ord for ApiRecipe {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.CraftType.ID != other.CraftType.ID {
+            return self.CraftType.ID.cmp(&other.CraftType.ID);
+        }
+
+        // risky
+        let self_links = self.GameContentLinks.clone().unwrap();
+        let other_links = other.GameContentLinks.clone().unwrap();
+        let self_page = self_links.RecipeNotebookList.keys().collect::<Vec<_>>()[0];
+        let other_page = other_links.RecipeNotebookList.keys().collect::<Vec<_>>()[0];
+
+        // This needs to extract the integer from page string of the form "Recipe22"
+        if self_page != other_page {
+            return self_page.cmp(&other_page);
+        }
+
+        let self_index = self_links.RecipeNotebookList.get(self_page).unwrap();
+        let other_index = self_links.RecipeNotebookList.get(other_page).unwrap();
+
+        if self_index != other_index {
+            return self_index.cmp(&other_index);
+        }
+
+        // fall back on sorting by ID
+        self.ID.cmp(&other.ID)
+    }
+}
+
+impl PartialOrd for ApiRecipe {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -159,6 +212,7 @@ pub fn query_recipe_by_name(item_name: &str) -> Result<Vec<ApiRecipe>, Error> {
         "Name",
         "QualityFactor",
         "RecipeLevelTable",
+        "GameContentLinks",
     ];
     let s: String = columns.iter().map(|e| e.to_string() + ",").collect();
     let body = reqwest::Client::new()
@@ -167,13 +221,12 @@ pub fn query_recipe_by_name(item_name: &str) -> Result<Vec<ApiRecipe>, Error> {
             ("indexes", "Recipe"),
             ("columns", &s),
             ("string", item_name),
-            ("string_algo", "term"),
-            ("sort_field", "ID"), // XIV sorts recipe output in game by ID of item in the recipe list
             ("pretty", "1"),
         ])
         .send()?
         .text()?;
-    let r: ApiReply<ApiRecipe> = serde_json::from_str(&body)?;
+    let mut r: ApiReply<ApiRecipe> = serde_json::from_str(&body)?;
+    r.Results.sort();
     log::trace!("{:#?}", r.Results);
     Ok(r.Results)
 }
@@ -215,4 +268,41 @@ mod test {
         assert_eq!(item.AmountIngredient5, 0);
         Ok(())
     }
+
+    #[test]
+    fn triphane_test() -> Result<(), Error> {
+        setup();
+
+        let api_results = query_recipe_by_name("Triphane")?;
+        let item = &api_results[0];
+        log::trace!("item fetched: {:#?}", item);
+        assert_eq!(item.Name, "Triphane");
+        Ok(())
+    }
+
+    #[test]
+    fn swalloskin_gloves_test() -> Result<(), Error> {
+        setup();
+
+        let names = vec![
+            "Swallowskin Gloves of Fending",
+            "Swallowskin Gloves of Maiming",
+            "Swallowskin Gloves of Striking",
+            "Swallowskin Gloves of Scouting",
+            "Swallowskin Gloves of Aiming",
+            "Swallowskin Gloves of Casting",
+            "Swallowskin Gloves of Healing",
+            "Swallowskin Gloves",
+        ];
+
+        let api_results = query_recipe_by_name("Swallowskin Gloves")?;
+
+        log::trace!("results: {:#?}", api_results);
+        assert_eq!(api_results.len(), names.len());
+        for (i, recipe) in api_results.iter().enumerate() {
+            assert_eq!(recipe.Name, names[i]);
+        }
+        Ok(())
+    }
+
 }
